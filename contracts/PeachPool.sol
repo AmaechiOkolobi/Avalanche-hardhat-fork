@@ -17,7 +17,7 @@ contract PeachPool {
     address private JOE_FACTORY;
     address private JOE_ROUTER;
 
-    IJoeRouter02 private router;
+    IJoeRouter02 private router; // use this
     IJoePair private pair;
 
     event Log(string message, uint val);
@@ -38,7 +38,6 @@ contract PeachPool {
 
         JOE_FACTORY = _factory;
         JOE_ROUTER = _router;
-
         // wavaxPeachPairAddress = IJoeFactory(JOE_FACTORY).createPair(PEACH_TOKEN, _WAVAX);
     }
 
@@ -66,62 +65,49 @@ contract PeachPool {
         );
     }
 
-    function swapExactTokensForAVAX(address _tokenAddress, uint256 _tokenAmount, address[] calldata path, address _WAVAX, uint256 _wavaxAmount) external payable returns(uint[] memory amount) { 
-        IERC20(_tokenAddress).approve(address(JOE_ROUTER), _tokenAmount);
-        IERC20(_tokenAddress).approve(JOE_FACTORY, _tokenAmount);
-        
+    function swapExactTokensForAVAX(
+        address _tokenAddress,
+        uint256 _tokenAmount,
+        address[] calldata path
+    ) external returns (uint[] memory amount) {
+        IERC20(_tokenAddress).approve(address(router), _tokenAmount);
+
         IERC20(_tokenAddress).transferFrom(
             msg.sender,
             address(this),
             _tokenAmount
         );
 
-        IERC20(_WAVAX).transferFrom(
-            msg.sender,
-            address(this),
-            _wavaxAmount
-        );
-
-
-        // IERC20(address(this)).approve(address(JOE_ROUTER), amountOutMin);
-        // IERC20(address(this)).approve(address(JOE_FACTORY), amountOutMin);
-
-        return IJoeRouter01(JOE_ROUTER).swapExactTokensForAVAX(
+        uint[] memory amounts = router.swapExactTokensForAVAX(
             _tokenAmount,
-            1,
+            0,
             path,
-            address(this),
+            msg.sender,
             block.timestamp
-        );       
+        );
+        console.log("amounts[1]: ", amounts[1]);
+        return amounts;
     }
 
-    function swapTokensForExactAVAX(address _tokenAddress, uint256 _tokenAmount, address[] calldata path, address _WAVAX, uint256 _wavaxAmount) external payable returns(uint[] memory amount) { 
-        IERC20(_tokenAddress).approve(address(JOE_ROUTER), _tokenAmount);
-        IERC20(_tokenAddress).approve(JOE_FACTORY, _tokenAmount);
-        
-        IERC20(_tokenAddress).transferFrom(
-            msg.sender,
-            address(this),
-            _tokenAmount
-        );
+    function swapAVAXForExactTokens(
+        address _tokenAddress,
+        uint256 _tokenAmount,
+        address[] calldata path
+    ) external payable returns (uint[] memory amount) {
+        IERC20(_tokenAddress).approve(address(this), _tokenAmount);
+        // IERC20(_tokenAddress).transferFrom(
+        //     address(this),
+        //     msg.sender,
+        //     _tokenAmount
+        // );
 
-        IERC20(_WAVAX).transferFrom(
-            msg.sender,
-            address(this),
-            _wavaxAmount
-        );
-
-
-        // IERC20(address(this)).approve(address(JOE_ROUTER), amountOutMin);
-        // IERC20(address(this)).approve(address(JOE_FACTORY), amountOutMin);
-
-        return IJoeRouter01(JOE_ROUTER).swapTokensForExactAVAX(
-            1,
-            _wavaxAmount,
+        uint[] memory amounts = router.swapAVAXForExactTokens{value: msg.value}(
+            _tokenAmount,
             path,
-            address(this),
+            msg.sender,
             block.timestamp
-        );       
+        );
+        return amounts;
     }
 
     function removeLiquidityAvax(address _tokenAddress) external {

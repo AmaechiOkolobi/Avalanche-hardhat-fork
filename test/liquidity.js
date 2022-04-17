@@ -14,7 +14,7 @@ const DEPOSIT_NUMBER = "5000000000000000000000"; // 5000
 const largeAmount = ethers.utils.parseEther('100');
 const amount80 = ethers.utils.parseEther('80');
 const amount78 = ethers.utils.parseEther('78');
-const amount1 = ethers.utils.parseEther('5');
+const amount1 = ethers.utils.parseEther('1');
 
 describe("Deploy contracts", () => {
     let peachPool, peachToken, joeRouterContract, joeFactoryContract, JOE_FACTORY_ADDRESS, wavaxContract;
@@ -58,8 +58,7 @@ describe("Deploy contracts", () => {
 
         // deploy PeachToken
         const PeachToken = await hre.ethers.getContractFactory("PeachToken");
-        peachToken = await PeachToken.deploy(peachOwner.address, largeAmount);
-
+        peachToken = await PeachToken.connect(peachOwner).deploy(peachOwner.address, DEPOSIT_NUMBER);
 
         // deploy peachPool
         const PeachPool = await hre.ethers.getContractFactory("PeachPool");
@@ -71,16 +70,26 @@ describe("Deploy contracts", () => {
             [peachToken.address, WAVAX_ADDRESS]
         );
 
+        const lpAddress = await joeFactoryContract.getPair(peachToken.address, WAVAX_ADDRESS);
+        const lpCreatedByPeachPool = await peachPool.getPair2();
+
+        //@notice check to see if LP created by PeachPool is the same as in JoeFactory;
+        expect(lpAddress).equal(lpCreatedByPeachPool);
+        
+        // TODO: negative checks
+        //await expectRevert(joeFactoryContract.connect(peachOwner).createPair(peachToken.address, WAVAX_ADDRESS),"Joe: PAIR_EXISTS");
+            
+        // We might need to move approvement into the contract functions
         await wavaxContract.connect(peachOwner).approve(peachPool.address, ethers.constants.MaxUint256);
         await peachToken.connect(peachOwner).approve(peachPool.address, ethers.constants.MaxUint256)
     });
 
-    it("should add liquidity via PeachPool and complete token swap", async () => {
+    it("should add liquidity via PeachPool", async () => {
 
         const lp = await peachPool.connect(peachOwner).checkLPTokenBalance();
         const lpBalanceBefore = ethers.utils.formatUnits(lp, 18);
 
-
+        // add liquidity Peach/AVAX
         const tx = await peachPool.connect(peachOwner)
             .addLiquidityAvax(peachToken.address, amount80, { value: largeAmount });
 
@@ -90,93 +99,52 @@ describe("Deploy contracts", () => {
         const lpBalance = await peachPool.connect(peachOwner).checkLPTokenBalance();
         const lpBalanceAfter = ethers.utils.formatUnits(lpBalance, 18);
 
-        console.log('LP balance before: ', lpBalanceBefore);
-        console.log('LP Balance after: ', lpBalanceAfter);
-
         expect(+lpBalanceBefore).lessThan(+lpBalanceAfter);
 
-        const _tokenAmount = ethers.utils.parseEther('20');
+        // SWAP
+        const peachBeforeSwap = ethers.utils.formatEther(await peachToken.balanceOf(peachOwner.address));
+        const peachOwnerAvaxBeforeSwap = ethers.utils.formatEther(await ethers.provider.getBalance(peachOwner.address));
 
-        const peachBalance = await peachToken.balanceOf(peachOwner.address);
-        const peachFormatted = ethers.utils.formatEther(peachBalance)
-        
-        const wavaxBalance = await wavaxContract.balanceOf(peachOwner.address);
-        const wavaxFormatted = ethers.utils.formatEther(wavaxBalance)
-
-        // SWAP FUNCTION
-        // swapExactTokensForAVAX
-        const swap = await peachPool.connect(peachOwner).swapExactTokensForAVAX( 
+        const swap = await peachPool.connect(peachOwner).swapExactTokensForAVAX(
             peachToken.address,
-            _tokenAmount,
-            [peachToken.address,wavaxContract.address],
-            WAVAX_ADDRESS, // WAVAX ADDRESS
-            amount1 //AVAX VALUE TRANSFERRED AS MUCH AS POSSIBLE FROM TOKEN
-        )
+            amount80,
+            [peachToken.address, wavaxContract.address]
+        );
+        await swap.wait();
 
-        // const swapReceipt = await swap.wait();
-        // console.log('swapReceipt: ', swapReceipt);
+        const peachAfterSwap = ethers.utils.formatEther(await peachToken.balanceOf(peachOwner.address))
+        const peachOwnerAvaxAfterSwap = ethers.utils.formatEther(await ethers.provider.getBalance(peachOwner.address));
 
-        const newpeachBalance = await peachToken.balanceOf(peachOwner.address);
-        const newpeachFormatted = ethers.utils.formatEther(newpeachBalance)
-        const newwavaxBalance = await wavaxContract.balanceOf(peachOwner.address);
-        const newwavaxFormatted = ethers.utils.formatEther(newwavaxBalance);
+        expect(+peachBeforeSwap).greaterThan(+peachAfterSwap);
+        expect(+peachOwnerAvaxBeforeSwap).lessThan(+peachOwnerAvaxAfterSwap);
 
-        console.log('peachFormatted: ', peachFormatted);
-        console.log('wavaxFormatted: ', wavaxFormatted);
-        console.log('peachFormatted after: ', newpeachFormatted);
-        console.log('wavaxFormatted after: ', newwavaxFormatted);
-
-    })
-
-    it("should add liquidity via PeachPool and complete token swap2", async () => {
-
-        const lp = await peachPool.connect(peachOwner).checkLPTokenBalance();
-        const lpBalanceBefore = ethers.utils.formatUnits(lp, 18);
-
-
-        const tx = await peachPool.connect(peachOwner)
-            .addLiquidityAvax(peachToken.address, amount80, { value: largeAmount });
-
-        await tx.wait();
-
-        // check peachOwner LP balance
-        const lpBalance = await peachPool.connect(peachOwner).checkLPTokenBalance();
-        const lpBalanceAfter = ethers.utils.formatUnits(lpBalance, 18);
-
-        // console.log('LP balance before: ', lpBalanceBefore);
-        // console.log('LP Balance after: ', lpBalanceAfter);
-
-        expect(+lpBalanceBefore).lessThan(+lpBalanceAfter);
-
-        const _tokenAmount = ethers.utils.parseEther('20');
-
-        const peachBalance = await peachToken.balanceOf(peachOwner.address);
-        const peachFormatted = ethers.utils.formatEther(peachBalance)
+        console.log('PEACH BEFORE SWAP: ',peachBeforeSwap)
+        console.log('PEACH AFTER SWAP: ',peachAfterSwap)
+        console.log('AVAX BEFORE SWAP: ',peachOwnerAvaxBeforeSwap)
+        console.log('AVAX AFTER SWAP: ',peachOwnerAvaxAfterSwap)
         
-        const wavaxBalance = await wavaxContract.balanceOf(peachOwner.address);
-        const wavaxFormatted = ethers.utils.formatEther(wavaxBalance)
+        //SWAP 2
+        const peachBeforeSwap2 = ethers.utils.formatEther(await peachToken.balanceOf(peachOwner.address));
+        const peachOwnerAvaxBeforeSwap2 = ethers.utils.formatEther(await ethers.provider.getBalance(peachOwner.address));
 
-        // swapTokensForExactAVAX
-        const swap2 = await peachPool.connect(peachOwner).swapTokensForExactAVAX( 
+        const swap2 = await peachPool.connect(peachOwner).swapAVAXForExactTokens(
             peachToken.address,
-            _tokenAmount,
-            [peachToken.address,wavaxContract.address],
-            WAVAX_ADDRESS, // WAVAX ADDRESS
-            amount1 //AVAX VALUE TRANSFERRED AS MUCH AS POSSIBLE FROM TOKEN
-        )
+            amount1, // Must Be Less Than ETH Value Sent
+            [wavaxContract.address,peachToken.address],
+            {value: amount80}
+        );
+        await swap2.wait();
 
-        // const swapReceipt = await swap2.wait();
-        // console.log('swapReceipt: ', swapReceipt);
+        const peachAfterSwap2 = ethers.utils.formatEther(await peachToken.balanceOf(peachOwner.address))
+        const peachOwnerAvaxAfterSwap2 = ethers.utils.formatEther(await ethers.provider.getBalance(peachOwner.address));
 
-        const newpeachBalance = await peachToken.balanceOf(peachOwner.address);
-        const newpeachFormatted = ethers.utils.formatEther(newpeachBalance)
-        const newwavaxBalance = await wavaxContract.balanceOf(peachOwner.address);
-        const newwavaxFormatted = ethers.utils.formatEther(newwavaxBalance);
+        expect(+peachBeforeSwap2).lessThan(+peachAfterSwap2);
+        expect(+peachOwnerAvaxBeforeSwap2).greaterThan(+peachOwnerAvaxAfterSwap2);
 
-        console.log('peachFormatted: ', peachFormatted);
-        console.log('wavaxFormatted: ', wavaxFormatted);
-        console.log('peachFormatted after: ', newpeachFormatted);
-        console.log('wavaxFormatted after: ', newwavaxFormatted);
+        console.log('PEACH BEFORE SWAP: ',peachBeforeSwap2)
+        console.log('PEACH AFTER SWAP: ',peachAfterSwap2)
+        console.log('AVAX BEFORE SWAP: ',peachOwnerAvaxBeforeSwap2)
+        console.log('AVAX AFTER SWAP: ',peachOwnerAvaxAfterSwap2)
     })
 
     it.skip("should directly call joeRouter", async () => {
